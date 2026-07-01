@@ -2,7 +2,7 @@ import discord
 from discord import app_commands
 import aiohttp
 import os
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 
 DISCORD_TOKEN = os.environ.get("DISCORD_TOKEN", "YOUR_DISCORD_BOT_TOKEN")
 EFLOW_API_KEY = os.environ.get("EFLOW_API_KEY", "YOUR_EFLOW_API_KEY")
@@ -44,10 +44,10 @@ async def fetch_eflow(subid: str, from_date: str, to_date: str):
             return await resp.json(content_type=None)
 
 
-@tree.command(name="presscott", description="Query revenue for a sub-ID")
+@tree.command(name="presscott", description="Query revenue for a sub-ID (defaults to last 7 days)")
 @app_commands.describe(
     subid     = "The campid to look up e.g. RLGRAVY2",
-    from_date = "Start date YYYY-MM-DD (default: today)",
+    from_date = "Start date YYYY-MM-DD (default: 7 days ago)",
     to_date   = "End date YYYY-MM-DD (default: today)"
 )
 async def presscott(
@@ -56,9 +56,9 @@ async def presscott(
     from_date:  str = None,
     to_date:    str = None
 ):
-    today     = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-    from_date = from_date or today
-    to_date   = to_date   or today
+    today     = datetime.now(timezone.utc)
+    to_date   = to_date   or today.strftime("%Y-%m-%d")
+    from_date = from_date or (today - timedelta(days=7)).strftime("%Y-%m-%d")
 
     await interaction.response.defer(thinking=True)
 
