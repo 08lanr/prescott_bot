@@ -45,16 +45,47 @@ async def fetch_eflow(subid: str, from_date: str, to_date: str):
 
 
 @tree.command(name="presscott", description="Query revenue for a sub-ID")
-@app_commands.describe(subid="The campid to look up e.g. RLGRAVY2")
-async def presscott(interaction: discord.Interaction, subid: str):
-    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+@app_commands.describe(
+    subid     = "The campid to look up e.g. RLGRAVY2",
+    from_date = "Start date YYYY-MM-DD (default: today)",
+    to_date   = "End date YYYY-MM-DD (default: today)"
+)
+async def presscott(
+    interaction: discord.Interaction,
+    subid:      str,
+    from_date:  str = None,
+    to_date:    str = None
+):
+    today     = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    from_date = from_date or today
+    to_date   = to_date   or today
+
     await interaction.response.defer(thinking=True)
 
     try:
-        data = await fetch_eflow(subid.strip(), today, today)
-        # Show raw response so we can see the structure
-        raw = str(data)[:1800]
-        await interaction.followup.send(f"**Raw API response:**\n```\n{raw}\n```")
+        data    = await fetch_eflow(subid.strip(), from_date, to_date)
+        summary = data.get("summary", {})
+
+        revenue     = float(summary.get("revenue", 0))
+        clicks      = int(summary.get("total_click", 0))
+        conversions = int(summary.get("cv", 0))
+        events      = int(summary.get("event", 0))
+
+        color = discord.Color.green() if revenue > 0 else discord.Color.orange()
+
+        embed = discord.Embed(
+            title     = f"📊 Sub-ID Report: `{subid}`",
+            color     = color,
+            timestamp = datetime.now(timezone.utc)
+        )
+        embed.add_field(name="💰 Revenue",     value=f"${revenue:,.2f}", inline=True)
+        embed.add_field(name="✅ Conversions", value=str(conversions),   inline=True)
+        embed.add_field(name="👆 Clicks",      value=str(clicks),        inline=True)
+        embed.add_field(name="⚡ Events",      value=str(events),        inline=True)
+        embed.add_field(name="📅 Date Range",  value=f"{from_date} → {to_date}", inline=False)
+        embed.set_footer(text="Presscott · eFlow Data")
+
+        await interaction.followup.send(embed=embed)
 
     except aiohttp.ClientResponseError as e:
         await interaction.followup.send(f"❌ eFlow API error `{e.status}`: {e.message}")
