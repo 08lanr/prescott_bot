@@ -58,8 +58,14 @@ async def fetch_eflow(subid: str, from_date: str, to_date: str) -> dict:
             return await resp.json()
 
 
-def parse_results(data: dict, subid: str) -> discord.Embed:
-    rows = data.get("table", {}).get("rows", [])
+def parse_results(data, subid: str) -> discord.Embed:
+    # Handle both list and dict response formats
+    if isinstance(data, list):
+        rows = data
+    elif isinstance(data, dict):
+        rows = data.get("table", {}).get("rows", []) or data.get("rows", []) or []
+    else:
+        rows = []
 
     # Aggregate across all rows matching this subid
     total_revenue     = 0.0
@@ -68,13 +74,16 @@ def parse_results(data: dict, subid: str) -> discord.Embed:
     offers_seen       = set()
 
     for row in rows:
-        cols      = row.get("columns", [])
-        reporting = row.get("reporting", {})
+        if not isinstance(row, dict):
+            continue
+        cols      = row.get("columns", []) or []
+        reporting = row.get("reporting", {}) or {}
 
         # Grab offer name if present
-        for col in cols:
-            if col.get("column") == "offer":
-                offers_seen.add(col.get("label", "Unknown"))
+        if isinstance(cols, list):
+            for col in cols:
+                if isinstance(col, dict) and col.get("column") == "offer":
+                    offers_seen.add(col.get("label", "Unknown"))
 
         total_revenue     += float(reporting.get("revenue",     0))
         total_conversions += int(reporting.get("conversions",   0))
