@@ -185,7 +185,7 @@ async def camps(interaction: discord.Interaction, range: str = "7days"):
         data = await fetch_eflow(f, t)
         rows = extract_rows(data)
 
-        lines = []
+        camps_data = []
         for row in rows:
             if not isinstance(row, dict):
                 continue
@@ -193,7 +193,13 @@ async def camps(interaction: discord.Interaction, range: str = "7days"):
             name    = row_label(row)
             revenue = float(rep.get("revenue", 0) or 0)
             clicks  = int(rep.get("total_click", 0) or 0)
+            camps_data.append((revenue, clicks, name))
 
+        # Highest revenue first; ties broken by most clicks
+        camps_data.sort(key=lambda c: (c[0], c[1]), reverse=True)
+
+        lines = []
+        for revenue, clicks, name in camps_data:
             if revenue > 0:
                 lines.append(f"✅ `{name}` — ${revenue:,.2f} | {clicks} clicks")
             else:
