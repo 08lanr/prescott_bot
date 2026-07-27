@@ -61,8 +61,28 @@ async def fetch_eflow(from_date: str, to_date: str, subid: str = None):
             return await resp.json(content_type=None)
 
 
-def build_embed(data: dict, subid: str, from_date: str, to_date: str) -> discord.Embed:
-    summary = data.get("summary", {})
+def extract_summary(data):
+    """Safely get summary from any response shape."""
+    if isinstance(data, dict):
+        return data.get("summary", {})
+    return {}
+
+
+def extract_rows(data):
+    """Safely get rows from any response shape."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return (
+            data.get("table", {}).get("rows") or
+            data.get("rows") or
+            []
+        )
+    return []
+
+
+def build_embed(data, subid: str, from_date: str, to_date: str) -> discord.Embed:
+    summary     = extract_summary(data)
     revenue     = float(summary.get("revenue", 0))
     clicks      = int(summary.get("total_click", 0))
     conversions = int(summary.get("cv", 0))
@@ -88,10 +108,10 @@ class DateRangeSelect(discord.ui.Select):
     def __init__(self, subid: str):
         self.subid = subid
         options = [
-            discord.SelectOption(label="Today",       value="today",   emoji="📅"),
-            discord.SelectOption(label="Yesterday",   value="yesterday", emoji="🕐"),
-            discord.SelectOption(label="Last 7 Days", value="7days",   emoji="📆", default=True),
-            discord.SelectOption(label="Last 30 Days",value="30days",  emoji="🗓️"),
+            discord.SelectOption(label="Today",        value="today",     emoji="📅"),
+            discord.SelectOption(label="Yesterday",    value="yesterday", emoji="🕐"),
+            discord.SelectOption(label="Last 7 Days",  value="7days",     emoji="📆", default=True),
+            discord.SelectOption(label="Last 30 Days", value="30days",    emoji="🗓️"),
         ]
         super().__init__(placeholder="📅 Change date range...", options=options)
 
@@ -139,15 +159,39 @@ async def camps(interaction: discord.Interaction, range: str = "7days"):
     await interaction.response.defer(thinking=True)
     try:
         from_date, to_date = get_date_range(range)
-        data = await fetch_eflow(from_date, to_date)
+        data    = await fetch_eflow(from_date, to_date)
+        summary = extract_summary(data)
+        rows    = extract_rows(data)
 
-        rows = data.get("table", {}).get("rows", []) if isinstance(data, dict) else []
+        # If we have per-camp rows, show them
+        if rows:
+            lines = []
+            for row in rows:
+                if not isinstance(row, dict):
+                    continue
+                cols      = row.get("columns") or []
+                reporting = row.get("reporting") or {}
+                sub1      = next((c.get("label", "unknown") for c in cols if isinstance(c, dict) and c.get("column") == "sub1"), "unknown")
+                revenue   = float(reporting.get("revenue", 0))
+                clicks    = int(reporting.get("total_click", 0))
 
-        if not rows:
-            # Fall back to summary only
-            summary = data.get("summary", {}) if isinstance(data, dict) else {}
+                if revenue > 0:
+                    lines.append(f"✅ `{sub1}` — ${revenue:,.2f} | {clicks} clicks")
+                else:
+                    lines.append(f"⬜ `{sub1}` — No Revenue | {clicks} clicks")
+
+            embed = discord.Embed(
+                title       = "📋 All Camps",
+                description = "\n".join(lines) if lines else "No data found.",
+                color       = discord.Color.blurple(),
+                timestamp   = datetime.now(timezone.utc)
+            )
+
+        else:
+            # Fall back to summary totals
             revenue = float(summary.get("revenue", 0))
             clicks  = int(summary.get("total_click", 0))
+            events  = int(summary.get("event", 0))
 
             embed = discord.Embed(
                 title     = "📋 All Camps Overview",
@@ -156,31 +200,8 @@ async def camps(interaction: discord.Interaction, range: str = "7days"):
             )
             embed.add_field(name="💰 Total Revenue", value=f"${revenue:,.2f}", inline=True)
             embed.add_field(name="👆 Total Clicks",  value=str(clicks),        inline=True)
-            embed.add_field(name="📅 Date Range",    value=f"{from_date} → {to_date}", inline=False)
-            embed.set_footer(text="Presscott · eFlow Data")
-            await interaction.followup.send(embed=embed)
-            return
+            embed.add_field(name="⚡ Total Events",  value=str(events),        inline=True)
 
-        # Build per-camp list
-        lines = []
-        for row in rows:
-            cols      = row.get("columns", [])
-            reporting = row.get("reporting", {})
-            sub1      = next((c.get("label", "unknown") for c in cols if c.get("column") == "sub1"), "unknown")
-            revenue   = float(reporting.get("revenue", 0))
-            clicks    = int(reporting.get("total_click", 0))
-
-            if revenue > 0:
-                lines.append(f"✅ `{sub1}` — ${revenue:,.2f} | {clicks} clicks")
-            else:
-                lines.append(f"⬜ `{sub1}` — No Revenue | {clicks} clicks")
-
-        embed = discord.Embed(
-            title       = "📋 All Camps",
-            description = "\n".join(lines) if lines else "No data found.",
-            color       = discord.Color.blurple(),
-            timestamp   = datetime.now(timezone.utc)
-        )
         embed.add_field(name="📅 Date Range", value=f"{from_date} → {to_date}", inline=False)
         embed.set_footer(text="Presscott · eFlow Data")
         await interaction.followup.send(embed=embed)
