@@ -77,25 +77,41 @@ def build_embed(data, subid, from_date, to_date):
     return embed
 
 
+RANGE_OPTIONS = [
+    ("Today",        "today",     "📅"),
+    ("Yesterday",    "yesterday", "🕐"),
+    ("Last 7 Days",  "7days",     "📆"),
+    ("Last 30 Days", "30days",    "🗓️"),
+]
+
+
 class DateRangeSelect(discord.ui.Select):
-    def __init__(self, subid):
-        self.subid = subid
+    def __init__(self, subid, selected="7days"):
+        self.subid    = subid
+        self.selected = selected
         super().__init__(
             placeholder="📅 Change date range...",
             options=[
-                discord.SelectOption(label="Today",        value="today",     emoji="📅"),
-                discord.SelectOption(label="Yesterday",    value="yesterday", emoji="🕐"),
-                discord.SelectOption(label="Last 7 Days",  value="7days",     emoji="📆", default=True),
-                discord.SelectOption(label="Last 30 Days", value="30days",    emoji="🗓️"),
+                discord.SelectOption(
+                    label   = label,
+                    value   = value,
+                    emoji   = emoji,
+                    default = (value == selected),
+                )
+                for label, value, emoji in RANGE_OPTIONS
             ]
         )
 
     async def callback(self, interaction):
         await interaction.response.defer()
-        f, t = get_date_range(self.values[0])
+        choice = self.values[0]
+        f, t   = get_date_range(choice)
         try:
             data = await fetch_eflow(f, t, self.subid)
-            await interaction.message.edit(embed=build_embed(data, self.subid, f, t))
+            await interaction.message.edit(
+                embed = build_embed(data, self.subid, f, t),
+                view  = DateRangeView(self.subid, selected=choice),
+            )
         except Exception as e:
             await interaction.followup.send(
                 f"❌ `{type(e).__name__}: {e}`", ephemeral=True
@@ -103,9 +119,9 @@ class DateRangeSelect(discord.ui.Select):
 
 
 class DateRangeView(discord.ui.View):
-    def __init__(self, subid):
+    def __init__(self, subid, selected="7days"):
         super().__init__(timeout=600)
-        self.add_item(DateRangeSelect(subid))
+        self.add_item(DateRangeSelect(subid, selected))
 
 
 @tree.command(name="presscott", description="Query revenue for a sub-ID")
